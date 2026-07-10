@@ -87,6 +87,10 @@ Key concepts practiced in this project:
 - softmax numerical stability
 - basic Nsight Compute profiling workflow
 
+## Contribution Workflow
+
+Portfolio updates follow `PUSH_WORKFLOW.md`.
+
 ## Next Steps
 
 - Add profiling screenshots and performance comparison tables
