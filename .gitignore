@@ -1,0 +1,28 @@
+# CUDA build outputs
+*.o
+*.out
+*.exe
+*_ncu
+
+# Nsight Compute reports and generated input/output
+*.ncu-rep
+ncu/
+input_*.txt
+output_*.txt
+
+# Local binaries without extensions
+course2
+course3
+course3.1
+course3.1.1
+course3.2.1
+hello_world
+xiangjia
+neicun
+softmax_warp_shared
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
