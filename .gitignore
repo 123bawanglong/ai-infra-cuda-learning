@@ -19,7 +19,9 @@ course3.2.1
 hello_world
 xiangjia
 neicun
-softmax_warp_shared
+/softmax_shared
+/softmax_warp
+/softmax_warp_shared
 
 # Editor and OS files
 .vscode/
