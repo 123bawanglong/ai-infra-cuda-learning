@@ -1,6 +1,14 @@
 #include <iostream>
 #include <cuda_runtime.h>
 #define BLOCK_SIZE 256
+__device__ float warpReduceSum(float value){
+    value+=__shfl_down_sync(0xffffffff,value,16);
+    value+=__shfl_down_sync(0xffffffff,value,8);
+    value+=__shfl_down_sync(0xffffffff,value,4);
+    value+=__shfl_down_sync(0xffffffff,value,2);
+    value+=__shfl_down_sync(0xffffffff,value,1);
+    return value;
+}
 __global__ void reduce(const float *g_idata,float *g_odata,int N){
 __shared__ float sidata[BLOCK_SIZE];
 int tid=threadIdx.x;
@@ -11,19 +19,25 @@ else{
 sidata[tid]=0.f;
 }
 __syncthreads();
-for(int i=BLOCK_SIZE/2;i>=1;i/=2){
+for(int i=BLOCK_SIZE/2;i>32;i/=2){
     if(tid<i){
         sidata[tid]+=sidata[tid+i];
     }
     __syncthreads();
 }
+if(tid<32){
+float value=sidata[tid]+sidata[tid+32];
+value=warpReduceSum(value);
 if(tid==0){
-    g_odata[blockIdx.x]=sidata[0];
-}
-}
+    g_odata[blockIdx.x]=value;}
+}}
 int main(){
     int N;
     std::cin>>N;
+    if(N<=0||N>BLOCK_SIZE*BLOCK_SIZE){
+        std::cerr<<"666演都不演了"<<std::endl;
+        return 1;
+    }
     float *h_idata=new float[N];
     for(int i=0;i<N;i++){
         std::cin>>h_idata[i];
@@ -57,6 +71,8 @@ int main(){
     cudaFree(d_idata);
     cudaFree(d_odata);
     cudaFree(d_out);
+    cudaEventDestroy(begin);
+    cudaEventDestroy(end);
     delete[] h_idata;
     return 0;
 }
