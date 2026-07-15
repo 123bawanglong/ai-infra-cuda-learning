@@ -12,6 +12,14 @@ The current focus is implementing and optimizing a row-wise softmax kernel with 
 | `src/softmax_warp.cu` | Warp shuffle reduction | One warp handles one row. Warp-level shuffle replaces shared-memory reduction inside the warp. |
 | `src/softmax_warp_shared.cu` | Multi-warp shuffle + shared memory | Multiple warps handle one row. Shuffle reduces inside each warp, shared memory combines warp-level results. |
 
+### Reduction Learning Versions
+
+| File | Version | Main Idea |
+|---|---|---|
+| `src/reduction/reduce_v1_sequential.cu` | V1: sequential addressing | Continuous active threads reduce through shared memory. |
+| `src/reduction/reduce_v2_last_warp_shuffle.cu` | V2: last-warp shuffle | Shared memory reduces to 64 values, then warp 0 finishes with `__shfl_down_sync`. |
+| `src/reduction/reduce_v3_block_reduce_grid_stride.cu` | V3: block reduce + grid-stride loop | Threads accumulate local sums, every warp reduces independently, and warp 0 combines warp sums. |
+
 The current best learning target is `src/softmax_warp_shared.cu`, which uses:
 
 - one CUDA block per row
@@ -30,6 +38,9 @@ Softmax is a common operation in deep learning workloads, especially in attentio
 nvcc -lineinfo src/softmax_shared.cu -o softmax_shared
 nvcc -lineinfo src/softmax_warp.cu -o softmax_warp
 nvcc -lineinfo src/softmax_warp_shared.cu -o softmax_warp_shared
+nvcc -lineinfo src/reduction/reduce_v1_sequential.cu -o reduce_v1
+nvcc -lineinfo src/reduction/reduce_v2_last_warp_shuffle.cu -o reduce_v2
+nvcc -lineinfo src/reduction/reduce_v3_block_reduce_grid_stride.cu -o reduce_v3
 ```
 
 ## Run A Small Test
