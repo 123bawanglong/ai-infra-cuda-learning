@@ -2,9 +2,17 @@
 
 This repository records my CUDA learning path for AI infrastructure and LLM inference optimization.
 
-The current focus is implementing and optimizing a row-wise softmax kernel with CUDA. The project compares different reduction strategies, including shared memory, warp shuffle, and multi-warp cooperation.
+The current work includes a shared-memory tiled SGEMM and optimized row-wise softmax kernels. These examples cover global-memory reuse, block-level cooperation, reduction strategies, warp shuffle, and multi-warp cooperation.
 
 ## Kernels
+
+### Matrix Multiplication
+
+| File | Version | Main Idea |
+|---|---|---|
+| `src/sgemm_shared_memory.cu` | Shared-memory tiled SGEMM | One thread computes one output element. A block cooperatively loads A/B tiles into shared memory and reuses them across the K dimension. |
+
+### Softmax
 
 | File | Version | Main Idea |
 |---|---|---|
@@ -35,6 +43,7 @@ Softmax is a common operation in deep learning workloads, especially in attentio
 ## Build
 
 ```bash
+nvcc -lineinfo src/sgemm_shared_memory.cu -o sgemm_shared_memory
 nvcc -lineinfo src/softmax_shared.cu -o softmax_shared
 nvcc -lineinfo src/softmax_warp.cu -o softmax_warp
 nvcc -lineinfo src/softmax_warp_shared.cu -o softmax_warp_shared
@@ -44,6 +53,25 @@ nvcc -lineinfo src/reduction/reduce_v3_block_reduce_grid_stride.cu -o reduce_v3
 ```
 
 ## Run A Small Test
+
+SGEMM boundary and correctness test:
+
+```bash
+printf "2 3 4\n1 2 3 4 5 6 7 8\n1 0 0 0 1 0 0 0 1 1 1 1\n" | ./sgemm_shared_memory
+```
+
+Expected values:
+
+```text
+5
+6
+7
+13
+14
+15
+```
+
+Softmax correctness test:
 
 ```bash
 printf "2 3\n1 2 3\n4 5 6\n" | ./softmax_warp_shared
@@ -92,6 +120,7 @@ Key concepts practiced in this project:
 
 - CUDA grid, block, thread, warp, and lane
 - global memory vs shared memory vs registers
+- tiled matrix multiplication and shared-memory data reuse
 - warp-level communication with shuffle instructions
 - block-level synchronization with `__syncthreads`
 - reduction patterns for max and sum
