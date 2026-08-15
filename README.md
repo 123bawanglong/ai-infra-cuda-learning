@@ -1,83 +1,110 @@
 # AI Infra CUDA Learning
 
-This repository records my CUDA learning path for AI infrastructure and LLM inference optimization.
+CUDA learning examples for AI infrastructure and LLM inference optimization. The repository groups kernels by operator and keeps numbered implementations in optimization order.
 
-The current work includes a shared-memory tiled SGEMM and optimized row-wise softmax kernels. These examples cover global-memory reuse, block-level cooperation, reduction strategies, warp shuffle, and multi-warp cooperation.
+## Repository Layout
+
+```text
+.
+├── src/
+│   ├── gemm/          # cuBLAS reference and SGEMM optimization stages
+│   ├── softmax/       # row-wise softmax optimization stages
+│   ├── reduction/     # block-reduction learning stages
+│   └── histogram/     # shared-memory histogram
+├── docs/
+│   └── softmax/       # profiling workflow and results template
+├── scripts/
+│   └── softmax/       # softmax input generator
+└── PUSH_WORKFLOW.md   # repository contribution checklist
+```
 
 ## Kernels
 
 ### Matrix Multiplication
 
-| File | Version | Main Idea |
+| File | Stage | Main idea |
 |---|---|---|
-| `src/sgemm_shared_memory.cu` | Shared-memory tiled SGEMM | One thread computes one output element. A block cooperatively loads A/B tiles into shared memory and reuses them across the K dimension. |
+| `src/gemm/cublas_row_major_reference.cu` | Reference | Row-major GEMM implemented with cuBLAS for comparison. |
+| `src/gemm/sgemm_v1_shared_memory.cu` | V1 | Shared-memory block tiling; one thread computes one output element. |
+| `src/gemm/sgemm_v2_register_tiled_vectorized.cu` | V2 | Per-thread register tiles and `float4` vectorized memory access, with boundary fallback paths. |
+| `src/gemm/sgemm_v3_double_buffered.cu` | V3 | Double-buffered shared memory and register prefetching overlap tile loading with computation. |
+| `src/gemm/sgemm_v4_warp_tiled_double_buffered.cu` | V4 | Adds warp-level output tiling to the double-buffered pipeline. |
+
+V3 and V4 currently require `M` and `N` to be multiples of 128 and `K` to be a multiple of 8.
 
 ### Softmax
 
-| File | Version | Main Idea |
+| File | Stage | Main idea |
 |---|---|---|
-| `src/softmax_shared.cu` | Shared-memory reduction | One block handles one row. Threads compute local max/sum, then reduce through shared memory. |
-| `src/softmax_warp.cu` | Warp shuffle reduction | One warp handles one row. Warp-level shuffle replaces shared-memory reduction inside the warp. |
-| `src/softmax_warp_shared.cu` | Multi-warp shuffle + shared memory | Multiple warps handle one row. Shuffle reduces inside each warp, shared memory combines warp-level results. |
+| `src/softmax/softmax_v1_shared_memory.cu` | V1 | One block per row with shared-memory max and sum reductions. |
+| `src/softmax/softmax_v2_warp_shuffle.cu` | V2 | One warp per row; shuffle instructions replace intra-warp shared-memory reductions. |
+| `src/softmax/softmax_v3_multi_warp_shared.cu` | V3 | Multiple warps per row; shuffle reduces within warps and shared memory combines warp results. |
 
-### Reduction Learning Versions
+### Reduction
 
-| File | Version | Main Idea |
+| File | Stage | Main idea |
 |---|---|---|
-| `src/reduction/reduce_v1_sequential.cu` | V1: sequential addressing | Continuous active threads reduce through shared memory. |
-| `src/reduction/reduce_v2_last_warp_shuffle.cu` | V2: last-warp shuffle | Shared memory reduces to 64 values, then warp 0 finishes with `__shfl_down_sync`. |
-| `src/reduction/reduce_v3_block_reduce_grid_stride.cu` | V3: block reduce + grid-stride loop | Threads accumulate local sums, every warp reduces independently, and warp 0 combines warp sums. |
+| `src/reduction/reduce_v1_sequential.cu` | V1 | Continuous active threads reduce through shared memory. |
+| `src/reduction/reduce_v2_last_warp_shuffle.cu` | V2 | Shared memory reduces to 64 values, then warp 0 finishes with `__shfl_down_sync`. |
+| `src/reduction/reduce_v3_block_reduce_grid_stride.cu` | V3 | Grid-stride accumulation, independent warp reductions, and a final warp-level merge. |
 
-The current best learning target is `src/softmax_warp_shared.cu`, which uses:
+### Histogram
 
-- one CUDA block per row
-- multiple warps per block
-- warp-level reduction with `__shfl_down_sync`
-- shared memory for inter-warp reduction
-- numerically stable softmax using `exp(x - row_max)`
-
-## Why This Matters
-
-Softmax is a common operation in deep learning workloads, especially in attention mechanisms. Optimizing softmax helps build intuition for GPU execution, memory hierarchy, synchronization, and profiling, all of which are important for AI infrastructure and LLM inference systems.
+| File | Main idea |
+|---|---|
+| `src/histogram/histogram_shared_memory_atomics.cu` | Each block accumulates a private shared-memory histogram before atomically merging it into the global result. |
 
 ## Build
 
-```bash
-nvcc -lineinfo src/sgemm_shared_memory.cu -o sgemm_shared_memory
-nvcc -lineinfo src/softmax_shared.cu -o softmax_shared
-nvcc -lineinfo src/softmax_warp.cu -o softmax_warp
-nvcc -lineinfo src/softmax_warp_shared.cu -o softmax_warp_shared
-nvcc -lineinfo src/reduction/reduce_v1_sequential.cu -o reduce_v1
-nvcc -lineinfo src/reduction/reduce_v2_last_warp_shuffle.cu -o reduce_v2
-nvcc -lineinfo src/reduction/reduce_v3_block_reduce_grid_stride.cu -o reduce_v3
-```
-
-## Run A Small Test
-
-SGEMM boundary and correctness test:
+Create a local output directory:
 
 ```bash
-printf "2 3 4\n1 2 3 4 5 6 7 8\n1 0 0 0 1 0 0 0 1 1 1 1\n" | ./sgemm_shared_memory
+mkdir -p build
 ```
 
-Expected values:
+Compile an individual kernel with `nvcc`:
+
+```bash
+nvcc -O3 -lineinfo src/gemm/sgemm_v1_shared_memory.cu -o build/sgemm_v1
+nvcc -O3 -lineinfo src/gemm/sgemm_v2_register_tiled_vectorized.cu -o build/sgemm_v2
+nvcc -O3 -lineinfo src/gemm/sgemm_v3_double_buffered.cu -o build/sgemm_v3
+nvcc -O3 -lineinfo src/gemm/sgemm_v4_warp_tiled_double_buffered.cu -o build/sgemm_v4
+
+nvcc -O3 -lineinfo src/softmax/softmax_v1_shared_memory.cu -o build/softmax_v1
+nvcc -O3 -lineinfo src/softmax/softmax_v2_warp_shuffle.cu -o build/softmax_v2
+nvcc -O3 -lineinfo src/softmax/softmax_v3_multi_warp_shared.cu -o build/softmax_v3
+
+nvcc -O3 -lineinfo src/histogram/histogram_shared_memory_atomics.cu -o build/histogram
+```
+
+The cuBLAS reference also needs the cuBLAS library:
+
+```bash
+nvcc -O3 -lineinfo src/gemm/cublas_row_major_reference.cu -lcublas -o build/cublas_gemm
+```
+
+## Small Correctness Tests
+
+Boundary-safe SGEMM V1 test:
+
+```bash
+printf "2 3 4\n1 2 3 4 5 6 7 8\n1 0 0 0 1 0 0 0 1 1 1 1\n" | build/sgemm_v1
+```
+
+Expected matrix values after the timing line:
 
 ```text
-5
-6
-7
-13
-14
-15
+5 6 7
+13 14 15
 ```
 
-Softmax correctness test:
+Softmax test:
 
 ```bash
-printf "2 3\n1 2 3\n4 5 6\n" | ./softmax_warp_shared
+printf "2 3\n1 2 3\n4 5 6\n" | build/softmax_v3
 ```
 
-Expected softmax values after the timing line:
+Expected values after the timing line:
 
 ```text
 0.0900306
@@ -88,51 +115,43 @@ Expected softmax values after the timing line:
 0.665241
 ```
 
-## Profiling
+Histogram test:
+
+```bash
+printf "8\n0 1 1 2 2 2 255 300\n" | build/histogram
+```
+
+The relevant bins should be `0 : 1`, `1 : 2`, `2 : 3`, and `255 : 1`; the out-of-range value is ignored.
+
+## Softmax Profiling
 
 Generate a larger input:
 
 ```bash
-python3 scripts/gen_input.py --rows 320 --cols 4096 > input_320x4096.txt
+python3 scripts/softmax/gen_input.py --rows 320 --cols 4096 > input_320x4096.txt
 ```
 
-Profile with Nsight Compute:
+Profile all three stages with Nsight Compute:
 
 ```bash
-ncu --set basic --force-overwrite -o reports/softmax_shared_320x4096 ./softmax_shared < input_320x4096.txt
-ncu --set basic --force-overwrite -o reports/softmax_warp_320x4096 ./softmax_warp < input_320x4096.txt
-ncu --set basic --force-overwrite -o reports/softmax_warp_shared_320x4096 ./softmax_warp_shared < input_320x4096.txt
+ncu --set basic --force-overwrite -o reports/softmax_v1_320x4096 build/softmax_v1 < input_320x4096.txt
+ncu --set basic --force-overwrite -o reports/softmax_v2_320x4096 build/softmax_v2 < input_320x4096.txt
+ncu --set basic --force-overwrite -o reports/softmax_v3_320x4096 build/softmax_v3 < input_320x4096.txt
 ```
 
-See `docs/profiling.md` for the analysis template.
+See `docs/softmax/profiling.md` for the analysis checklist and results table.
 
-## Optimization Path
+## Learning Focus
 
-| Step | Kernel | What Improved | Main Limitation |
-|---|---|---|---|
-| 1 | `softmax_shared.cu` | Uses many threads in a block and shared memory reduction. | Shared-memory reduction needs repeated block-level synchronization. |
-| 2 | `softmax_warp.cu` | Uses warp shuffle for lower-latency warp-level communication. | `blockDim.x = 32`, so row-level parallelism is limited for large `C`. |
-| 3 | `softmax_warp_shared.cu` | Uses multiple warps per row. Shuffle handles intra-warp reduction; shared memory handles inter-warp reduction. | Final inter-warp reduction is still simple and can be further optimized. |
-
-## Learning Notes
-
-Key concepts practiced in this project:
-
-- CUDA grid, block, thread, warp, and lane
-- global memory vs shared memory vs registers
-- tiled matrix multiplication and shared-memory data reuse
+- CUDA grid, block, thread, warp, and lane organization
+- global memory, shared memory, and register reuse
+- tiled matrix multiplication and vectorized access
+- double buffering and register prefetching
 - warp-level communication with shuffle instructions
-- block-level synchronization with `__syncthreads`
-- reduction patterns for max and sum
-- softmax numerical stability
-- basic Nsight Compute profiling workflow
+- reduction patterns for max, sum, and histograms
+- numerical stability in softmax
+- Nsight Compute profiling and bottleneck analysis
 
 ## Contribution Workflow
 
 Portfolio updates follow `PUSH_WORKFLOW.md`.
-
-## Next Steps
-
-- Add profiling screenshots and performance comparison tables
-- Refactor repeated CUDA error checking
-- Compare different block sizes such as 128, 256, 512, and 1024

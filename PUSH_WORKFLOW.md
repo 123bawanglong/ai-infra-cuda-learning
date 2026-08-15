@@ -57,7 +57,7 @@ Do not commit by default:
 If a practice file becomes portfolio-worthy, copy or move it into a clear path first, for example:
 
 ```bash
-cp course3.1.cu src/softmax_shared.cu
+cp course3.1.cu src/softmax/softmax_v1_shared_memory.cu
 ```
 
 ### 3. Use Clear Portfolio File Names
@@ -65,11 +65,11 @@ cp course3.1.cu src/softmax_shared.cu
 Prefer names that explain the optimization idea:
 
 ```text
-src/softmax_shared.cu
-src/softmax_warp.cu
-src/softmax_warp_shared.cu
-docs/profiling.md
-scripts/gen_input.py
+src/gemm/sgemm_v2_register_tiled_vectorized.cu
+src/softmax/softmax_v2_warp_shuffle.cu
+src/reduction/reduce_v3_block_reduce_grid_stride.cu
+docs/softmax/profiling.md
+scripts/softmax/gen_input.py
 ```
 
 Avoid names that only make sense during a course:
@@ -89,15 +89,16 @@ Compile each changed CUDA file before pushing.
 Use the full CUDA path if `nvcc` is not in PATH:
 
 ```bash
-/usr/local/cuda-12.8/bin/nvcc -lineinfo src/softmax_shared.cu -o softmax_shared
-/usr/local/cuda-12.8/bin/nvcc -lineinfo src/softmax_warp.cu -o softmax_warp
-/usr/local/cuda-12.8/bin/nvcc -lineinfo src/softmax_warp_shared.cu -o softmax_warp_shared
+mkdir -p build
+/usr/local/cuda-12.8/bin/nvcc -lineinfo src/softmax/softmax_v1_shared_memory.cu -o build/softmax_v1
+/usr/local/cuda-12.8/bin/nvcc -lineinfo src/softmax/softmax_v2_warp_shuffle.cu -o build/softmax_v2
+/usr/local/cuda-12.8/bin/nvcc -lineinfo src/softmax/softmax_v3_multi_warp_shared.cu -o build/softmax_v3
 ```
 
 Run a small correctness test:
 
 ```bash
-printf "2 3\n1 2 3\n4 5 6\n" | ./softmax_warp_shared
+printf "2 3\n1 2 3\n4 5 6\n" | build/softmax_v3
 ```
 
 Expected softmax values after the timing line:
@@ -120,7 +121,7 @@ Do not use `git add .` unless the repository has been carefully checked.
 Prefer explicit staging:
 
 ```bash
-git add README.md docs/profiling.md scripts/gen_input.py src/softmax_shared.cu src/softmax_warp.cu src/softmax_warp_shared.cu
+git add README.md docs/softmax/profiling.md scripts/softmax/gen_input.py src/softmax/
 ```
 
 Then check again:
