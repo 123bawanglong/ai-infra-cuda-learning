@@ -1,10 +1,12 @@
 # CUDA build outputs
+/build/
 *.o
 *.out
 *.exe
 *_ncu
 
 # Nsight Compute reports and generated input/output
+/reports/
 *.ncu-rep
 ncu/
 input_*.txt

@@ -16,15 +16,16 @@ This shape is large enough to make row-wise parallelism visible while keeping th
 ## Commands
 
 ```bash
-python3 scripts/gen_input.py --rows 320 --cols 4096 > input_320x4096.txt
+python3 scripts/softmax/gen_input.py --rows 320 --cols 4096 > input_320x4096.txt
 
-nvcc -lineinfo src/softmax_shared.cu -o softmax_shared
-nvcc -lineinfo src/softmax_warp.cu -o softmax_warp
-nvcc -lineinfo src/softmax_warp_shared.cu -o softmax_warp_shared
+mkdir -p build
+nvcc -O3 -lineinfo src/softmax/softmax_v1_shared_memory.cu -o build/softmax_v1
+nvcc -O3 -lineinfo src/softmax/softmax_v2_warp_shuffle.cu -o build/softmax_v2
+nvcc -O3 -lineinfo src/softmax/softmax_v3_multi_warp_shared.cu -o build/softmax_v3
 
-ncu --set basic --force-overwrite -o reports/softmax_shared_320x4096 ./softmax_shared < input_320x4096.txt
-ncu --set basic --force-overwrite -o reports/softmax_warp_320x4096 ./softmax_warp < input_320x4096.txt
-ncu --set basic --force-overwrite -o reports/softmax_warp_shared_320x4096 ./softmax_warp_shared < input_320x4096.txt
+ncu --set basic --force-overwrite -o reports/softmax_v1_320x4096 build/softmax_v1 < input_320x4096.txt
+ncu --set basic --force-overwrite -o reports/softmax_v2_320x4096 build/softmax_v2 < input_320x4096.txt
+ncu --set basic --force-overwrite -o reports/softmax_v3_320x4096 build/softmax_v3 < input_320x4096.txt
 ```
 
 ## Analysis Checklist
@@ -46,6 +47,6 @@ Fill this table after collecting Nsight Compute results on the target machine:
 
 | Kernel | Block Size | Duration | Compute Throughput | Memory Throughput | Notes |
 |---|---:|---:|---:|---:|---|
-| `softmax_shared` | 256 | TBD | TBD | TBD | Shared-memory block reduction |
-| `softmax_warp` | 32 | TBD | TBD | TBD | Warp-only shuffle reduction |
-| `softmax_warp_shared` | 128 | TBD | TBD | TBD | Multi-warp shuffle + shared memory |
+| `softmax_v1` | 256 | TBD | TBD | TBD | Shared-memory block reduction |
+| `softmax_v2` | 32 | TBD | TBD | TBD | Warp-only shuffle reduction |
+| `softmax_v3` | 128 | TBD | TBD | TBD | Multi-warp shuffle + shared memory |
