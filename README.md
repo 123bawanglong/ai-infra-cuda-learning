@@ -10,11 +10,11 @@
 | 版本 | 耗时 | 计算吞吐量 |
 |---|---:|---:|
 | 朴素实现（V1） | 44.26 ms | 3.11 TFLOP/s |
-| V7（调参后） | 5.24 ms | 26.23 TFLOP/s |
+| V6（调参后） | 5.24 ms | 26.23 TFLOP/s |
 
-v7达到了cuBLAS的84.1%，但是加入tensor core之后的MMA 版本吞吐量却降到了约为只有 cuBLAS 的 **71.59%**；通过ncu的性能分析找到bank conflict的问题，最后针对性优化，新方案采用 PTX 指令与 XOR swizzle 后的吞吐达到了 cuBLAS **92.01%**。
+调参后的 V6 达到了 cuBLAS的84.1%，但是加入tensor core之后的 WMMA 版本吞吐量却降到了约为只有 cuBLAS 的 **71.59%**；通过ncu的性能分析找到bank conflict的问题，最后针对性优化，新方案采用 PTX 指令与 XOR swizzle 后的吞吐达到了 cuBLAS **92.01%**。
 
-下面按版本保留实验分析和 Nsight Compute 截图，点击展开。
+下面分为 **9 个版本：V1、V2、V3、V4、V5、V6、V7、WMMA Tensor Core、PTX + XOR Tensor Core**。各版本的实验分析和 Nsight Compute 截图可点击展开。
 <details>
 <summary><strong>V1 实验分析与性能记录</strong></summary>
 
@@ -416,7 +416,7 @@ Memory Workload Analysis提示bank conflict很严重，重点思考解决bank co
 </details>
 
 <details>
-<summary><strong>PTX + XOR  Tensor Core 实验分析与性能记录</strong></summary>
+<summary><strong>PTX + XOR Tensor Core 实验分析与性能记录</strong></summary>
 
 ![image-20260919235653055](images/image-20260919235653055.png)
 
