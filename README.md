@@ -3,18 +3,20 @@
 本仓库记录面向 AI 基础设施与大模型推理的 CUDA 算子实现和优化实验。
 从正确的基础实现出发，分析性能瓶颈，再逐步引入优化。
 
-## GEMM 优化实验：从朴素实现到 Warp 分块
+## GEMM 优化实验：从朴素实现到 Tensor Core
 
-在 `M=N=K=4096` 的实验记录中，调参后的 V7 相对 V1 达到约 **8.45×** 加速。
+在 `M=N=K=4096` 的实验记录中，调参后的 V6 相对 V1 达到约 **8.45×** 加速。
 
 | 版本 | 耗时 | 计算吞吐量 |
 |---|---:|---:|
 | 朴素实现（V1） | 44.26 ms | 3.11 TFLOP/s |
-| V7（调参后） | 5.24 ms | 26.23 TFLOP/s |
+| V6（调参后） | 5.24 ms | 26.23 TFLOP/s |
+
+最新 Tensor Core 实验记录：实现耗时 **1.798 ms**，cuBLAS **1.668 ms**，按相同计算量折算，吞吐量约为 cuBLAS 的 **92.80%**。
 
 下面按版本保留实验分析和 Nsight Compute 截图，点击展开。
 <details>
-<summary><strong>V1 实验分析与性能分析截图</strong></summary>
+<summary><strong>V1 实验分析与性能记录</strong></summary>
 
 ### Roofline 性能模型
 
@@ -82,7 +84,7 @@ LSU很高，说明主要compute在load/store上，FMA低，Warp State Statistics
 </details>
 
 <details>
-<summary><strong>V2 实验分析与性能分析截图</strong></summary>
+<summary><strong>V2 实验分析与性能记录</strong></summary>
 
 ### Roofline 性能模型
 
@@ -159,7 +161,7 @@ LG几乎直接消失了 现在mio成为最大等待，结合之前 No Eligible �
 </details>
 
 <details>
-<summary><strong>V3 实验分析与性能分析截图</strong></summary>
+<summary><strong>V3 实验分析与性能记录</strong></summary>
 
 ### Roofline 性能模型
 
@@ -216,7 +218,7 @@ LSU很高 SASS里load/store多 考虑向量化访存
 </details>
 
 <details>
-<summary><strong>V4 实验分析与性能分析截图</strong></summary>
+<summary><strong>V4 实验分析与性能记录</strong></summary>
 
 ### Roofline 性能模型
 
@@ -265,7 +267,7 @@ A转置写入出现bank conflict，需要解决，float4 一定程度上导致�
 </details>
 
 <details>
-<summary><strong>V5 实验分析与性能分析截图</strong></summary>
+<summary><strong>V5 实验分析与性能记录</strong></summary>
 
 ### Roofline 性能模型
 
@@ -306,7 +308,7 @@ sum[l][j]+=a_frag[l]*b_frag[j]，有 2,074 个 Short Scoreboard 未发射样本�
 </details>
 
 <details>
-<summary><strong>V6 实验分析与性能分析截图</strong></summary>
+<summary><strong>V6 实验分析与性能记录</strong></summary>
 
 在v5的异步拷贝和shared双缓冲基础上，给 `a_frag`、`b_frag` 加入寄存器双缓冲，提前加载下一轮要用的数据，再计算当前轮。M=N=K=4096，BM=32、BN=128、BK=32、TM=TN=4，与v5相同。
 
@@ -351,7 +353,7 @@ Short Scoreboard实现了有所下降。
 </details>
 
 <details>
-<summary><strong>V7 实验分析与性能分析截图</strong></summary>
+<summary><strong>V7 实验分析与性能记录</strong></summary>
 
 ### Roofline 性能模型
 
@@ -377,15 +379,23 @@ Short Scoreboard实现了有所下降。
 
 ![image-20260918224125829](images/image-20260918224125829.png)
 
-最终在M=N=K=4096的场景下达到cublas的84.1%，调参后的V7 约为 naive（V1）的 8.45 倍性能。
+### 诊断
+
+SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑引入 Tensor Core，探索更高的矩阵运算吞吐。
+
+最终在M=N=K=4096的场景下达到cublas的84.1%，调参后的V6 约为 naive（V1）的 8.45 倍性能。
 
 | 版本        | 耗时     | 计算吞吐量    |
 | ----------- | -------- | ------------- |
 | naive（V1） | 44.26 ms | 3.11 TFLOP/s  |
-| V7调参后    | 5.24 ms  | 26.23 TFLOP/s |
+| V6 调参后   | 5.24 ms  | 26.23 TFLOP/s |
 
-- **加速比**：`44.26 ÷ 5.24 ≈ 8.45×`
-- **耗时降低**：约 **88.16%**
+</details>
+
+<details>
+<summary><strong>Tensor Core 实验分析与性能记录</strong></summary>
+
+新版 **1.798 ms**，cuBLAS **1.668 ms**，比例约 **92.80%**。
 
 </details>
 
@@ -401,7 +411,7 @@ Short Scoreboard实现了有所下降。
 
 | 算子 | 优化过程 |
 |---|---|
-| GEMM | 朴素 FP32 → shared memory 分块 → 寄存器分块 → 向量化访存 → 异步拷贝与双缓冲 → 寄存器预取 → warp 分块；另含 TF32 Tensor Core 版本 |
+| GEMM | 朴素 FP32 → shared memory 分块 → 寄存器分块 → 向量化访存 → 异步拷贝与双缓冲 → 寄存器预取 → warp 分块；另含 TF32 WMMA 与 FP16 MMA Tensor Core 版本 |
 | Reduction | shared memory 归约 → warp shuffle → 网格跨步循环与 block 归约 |
 | Softmax | shared memory 归约 → 每行一个 warp → 每行多个 warp |
 | Transpose | 朴素转置 → 利用 shared memory 实现合并访存 → 填充消除 bank conflict → 每线程处理两个元素 |
@@ -415,7 +425,7 @@ Short Scoreboard实现了有所下降。
 .
 ├── src/
 │   ├── attention/    # FlashAttention 算子
-│   ├── gemm/         # GEMM V1–V7 与 TF32 Tensor Core 示例
+│   ├── gemm/         # GEMM V1–V7、TF32 WMMA 与 FP16 MMA 示例
 │   ├── histogram/    # shared memory 直方图
 │   ├── reduction/    # block 与 warp 归约的各阶段实现
 │   ├── rmsnorm/      # 向量化 RMSNorm
@@ -438,12 +448,13 @@ Short Scoreboard实现了有所下降。
 | V5 | [gemm_v5.cu](src/gemm/gemm_v5.cu) | global memory 到 shared memory 的异步拷贝与双缓冲 |
 | V6 | [gemm_v6.cu](src/gemm/gemm_v6.cu) | 寄存器片段双缓冲 |
 | V7 | [gemm_v7.cu](src/gemm/gemm_v7.cu) | 显式 warp 分块 |
-| Tensor Core | [gemm_tensor.cu](src/gemm/gemm_tensor.cu) | 使用 WMMA 进行 TF32 乘法与 FP32 累加 |
+| TF32 WMMA | [gemm_tensor.cu](src/gemm/gemm_tensor.cu) | 使用 WMMA 进行 TF32 乘法与 FP32 累加 |
+| FP16 MMA | [gemm_mma.cu](src/gemm/gemm_mma.cu) | 使用 ldmatrix 与 mma.sync 指令、shared memory 重排及异步双缓冲，FP16 输入、FP32 累加 |
 
-八个文件都是独立程序，固定使用 M=N=K=4096、全 1 输入、10 次预热和 100 次计时迭代。
+九个文件都是独立程序，固定使用 M=N=K=4096、全 1 输入、10 次预热和 100 次计时迭代。
 程序不读取标准输入，会输出平均 kernel 耗时、吞吐量和 C[0]（预期为 4096）。
 单个元素的检查仅用于基本运行验证，不等于完整正确性测试。
-Tensor Core 版本在乘法前将输入舍入到 TF32，其乘法精度与 FP32 版本不同。
+gemm_tensor.cu 在乘法前将输入舍入到 TF32；gemm_mma.cu 使用 FP16 输入和 FP32 累加。两者的乘法精度均与普通 FP32 版本不同。
 
 ### 归约与 Softmax
 
