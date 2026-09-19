@@ -10,9 +10,9 @@
 | 版本 | 耗时 | 计算吞吐量 |
 |---|---:|---:|
 | 朴素实现（V1） | 44.26 ms | 3.11 TFLOP/s |
-| V6（调参后） | 5.24 ms | 26.23 TFLOP/s |
+| V7（调参后） | 5.24 ms | 26.23 TFLOP/s |
 
-最新 Tensor Core 实验记录：WMMA 版本吞吐量约为 cuBLAS 的 **71.59%**；采用 PTX 指令与 XOR swizzle 后，达到 **92.01%**。
+v7达到了cuBLAS的84.1%，但是加入tsnor core之后的MMA 版本吞吐量却降到约为 cuBLAS 的 **71.59%**；最后通过ncu的性能分析针对性优化，新方案采用 PTX 指令与 XOR swizzle 后的吞吐达到了 cuBLAS **92.01%**。
 
 下面按版本保留实验分析和 Nsight Compute 截图，点击展开。
 <details>
