@@ -195,7 +195,7 @@ int main()
         (M + BM - 1) / BM
     );
     for (int i = 0; i < warmup; ++i) {
-        mysgemm_fp16_mma<BM,BN,BK,WM,WN><<<grid, block>>>(
+        mysgemm_mma<BM,BN,BK,WM,WN><<<grid, block>>>(
             M, N, K,
             alpha, A,
             beta, B, C
@@ -208,7 +208,7 @@ int main()
     cudaEventCreate(&stop);
     cudaEventRecord(start);
     for (int i = 0; i < repeat; ++i) {
-        mysgemm_fp16_mma<BM,BN,BK,WM,WN><<<grid, block>>>(
+        mysgemm_mma<BM,BN,BK,WM,WN><<<grid, block>>>(
             M, N, K,
             alpha, A,
             beta, B, C

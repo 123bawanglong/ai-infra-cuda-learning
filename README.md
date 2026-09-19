@@ -12,7 +12,7 @@
 | 朴素实现（V1） | 44.26 ms | 3.11 TFLOP/s |
 | V6（调参后） | 5.24 ms | 26.23 TFLOP/s |
 
-最新 Tensor Core 实验记录：实现耗时 **1.798 ms**，cuBLAS **1.668 ms**，按相同计算量折算，吞吐量约为 cuBLAS 的 **92.80%**。
+最新 Tensor Core 实验记录：WMMA 版本吞吐量约为 cuBLAS 的 **71.59%**；采用 PTX 指令与 XOR swizzle 后，达到 **92.01%**。
 
 下面按版本保留实验分析和 Nsight Compute 截图，点击展开。
 <details>
@@ -393,9 +393,40 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 </details>
 
 <details>
-<summary><strong>Tensor Core 实验分析与性能记录</strong></summary>
+<summary><strong>WMMA Tensor Core 实验分析与性能记录</strong></summary>
 
-新版 **1.798 ms**，cuBLAS **1.668 ms**，比例约 **92.80%**。
+![image-20260919234359931](images/image-20260919234359931.png)
+
+![image-20260919234127093](images/image-20260919234127093.png)
+
+新实现的WMMA tensor core版本虽然fma确实减少了，但是吞吐只有cublas版本的71.59%，性能比改成tensor core之前还要差，排查原因
+
+### 访存负载分析
+
+![image-20260919234550706](images/image-20260919234550706.png)
+
+Memory Workload Analysis提示bank conflict很严重，重点思考解决bank conflict的问题
+
+### SASS 指令分析
+
+![image-20260919235350219](images/image-20260919235350219.png)
+
+查看 L1 Wavefronts Shared Excessive，发现 shared → register 出现了大量的bank conflict，WMMA不允许逐个 lane 自定义 shared → register 的地址映射，所以考虑用PTX
+
+</details>
+
+<details>
+<summary><strong>PTX + XOR  Tensor Core 实验分析与性能记录</strong></summary>
+
+![image-20260919235653055](images/image-20260919235653055.png)
+
+通过用PTX并且设计特殊的XOR swizzle，最终的吞吐达到了 cuBLAS 性能的 92.01%，成功完成优化！
+
+### 访存负载分析
+
+![image-20260919235832581](images/image-20260919235832581.png)
+
+在看Memory Workload Analysis，提示bank conflict严重消失，说明PTX+特殊设计的WOR swizzle成功优化bank conflict并且成功提升了吞吐！
 
 </details>
 
@@ -411,7 +442,7 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 
 | 算子 | 优化过程 |
 |---|---|
-| GEMM | 朴素 FP32 → shared memory 分块 → 寄存器分块 → 向量化访存 → 异步拷贝与双缓冲 → 寄存器预取 → warp 分块；另含 FP16 MMA Tensor Core 版本 |
+| GEMM | 朴素 FP32 → shared memory 分块 → 寄存器分块 → 向量化访存 → 异步拷贝与双缓冲 → 寄存器预取 → warp 分块；另含 FP16 WMMA 与 PTX + XOR Tensor Core 版本 |
 | Reduction | shared memory 归约 → warp shuffle → 网格跨步循环与 block 归约 |
 | Softmax | shared memory 归约 → 每行一个 warp → 每行多个 warp |
 | Transpose | 朴素转置 → 利用 shared memory 实现合并访存 → 填充消除 bank conflict → 每线程处理两个元素 |
@@ -425,7 +456,7 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 .
 ├── src/
 │   ├── attention/    # FlashAttention 算子
-│   ├── gemm/         # GEMM V1–V7 与 FP16 MMA 示例
+│   ├── gemm/         # GEMM V1–V7、FP16 WMMA 与 PTX + XOR 示例
 │   ├── histogram/    # shared memory 直方图
 │   ├── reduction/    # block 与 warp 归约的各阶段实现
 │   ├── rmsnorm/      # 向量化 RMSNorm
@@ -448,12 +479,13 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 | V5 | [gemm_v5.cu](src/gemm/gemm_v5.cu) | global memory 到 shared memory 的异步拷贝与双缓冲 |
 | V6 | [gemm_v6.cu](src/gemm/gemm_v6.cu) | 寄存器片段双缓冲 |
 | V7 | [gemm_v7.cu](src/gemm/gemm_v7.cu) | 显式 warp 分块 |
-| FP16 MMA | [gemm_mma.cu](src/gemm/gemm_mma.cu) | 使用 ldmatrix 与 mma.sync 指令、shared memory 及异步双缓冲，FP16 输入、FP32 累加 |
+| FP16 WMMA | [gemm_fp16_wmma.cu](src/gemm/gemm_fp16_wmma.cu) | WMMA 接口、行主序 shared memory 布局与异步双缓冲，FP16 输入、FP32 累加 |
+| FP16 PTX + XOR | [gemm_fp16_ptx_xor.cu](src/gemm/gemm_fp16_ptx_xor.cu) | ldmatrix 与 mma.sync 指令、XOR swizzle 布局及异步双缓冲，FP16 输入、FP32 累加 |
 
-八个文件都是独立程序，固定使用 M=N=K=4096、全 1 输入、10 次预热和 100 次计时迭代。
+九个文件都是独立程序，固定使用 M=N=K=4096、全 1 输入、10 次预热和 100 次计时迭代。
 程序不读取标准输入，会输出平均 kernel 耗时、吞吐量和 C[0]（预期为 4096）。
 单个元素的检查仅用于基本运行验证，不等于完整正确性测试。
-gemm_mma.cu 使用 FP16 输入和 FP32 累加，其乘法精度与普通 FP32 版本不同。
+gemm_fp16_wmma.cu 与 gemm_fp16_ptx_xor.cu 均使用 FP16 输入和 FP32 累加，其乘法精度与普通 FP32 版本不同。
 
 ### 归约与 Softmax
 
