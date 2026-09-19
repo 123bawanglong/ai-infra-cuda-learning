@@ -411,7 +411,7 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 
 | 算子 | 优化过程 |
 |---|---|
-| GEMM | 朴素 FP32 → shared memory 分块 → 寄存器分块 → 向量化访存 → 异步拷贝与双缓冲 → 寄存器预取 → warp 分块；另含 TF32 WMMA 与 FP16 MMA Tensor Core 版本 |
+| GEMM | 朴素 FP32 → shared memory 分块 → 寄存器分块 → 向量化访存 → 异步拷贝与双缓冲 → 寄存器预取 → warp 分块；另含 FP16 MMA Tensor Core 版本 |
 | Reduction | shared memory 归约 → warp shuffle → 网格跨步循环与 block 归约 |
 | Softmax | shared memory 归约 → 每行一个 warp → 每行多个 warp |
 | Transpose | 朴素转置 → 利用 shared memory 实现合并访存 → 填充消除 bank conflict → 每线程处理两个元素 |
@@ -425,7 +425,7 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 .
 ├── src/
 │   ├── attention/    # FlashAttention 算子
-│   ├── gemm/         # GEMM V1–V7、TF32 WMMA 与 FP16 MMA 示例
+│   ├── gemm/         # GEMM V1–V7 与 FP16 MMA 示例
 │   ├── histogram/    # shared memory 直方图
 │   ├── reduction/    # block 与 warp 归约的各阶段实现
 │   ├── rmsnorm/      # 向量化 RMSNorm
@@ -448,13 +448,12 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 | V5 | [gemm_v5.cu](src/gemm/gemm_v5.cu) | global memory 到 shared memory 的异步拷贝与双缓冲 |
 | V6 | [gemm_v6.cu](src/gemm/gemm_v6.cu) | 寄存器片段双缓冲 |
 | V7 | [gemm_v7.cu](src/gemm/gemm_v7.cu) | 显式 warp 分块 |
-| TF32 WMMA | [gemm_tensor.cu](src/gemm/gemm_tensor.cu) | 使用 WMMA 进行 TF32 乘法与 FP32 累加 |
 | FP16 MMA | [gemm_mma.cu](src/gemm/gemm_mma.cu) | 使用 ldmatrix 与 mma.sync 指令、shared memory 重排及异步双缓冲，FP16 输入、FP32 累加 |
 
-九个文件都是独立程序，固定使用 M=N=K=4096、全 1 输入、10 次预热和 100 次计时迭代。
+八个文件都是独立程序，固定使用 M=N=K=4096、全 1 输入、10 次预热和 100 次计时迭代。
 程序不读取标准输入，会输出平均 kernel 耗时、吞吐量和 C[0]（预期为 4096）。
 单个元素的检查仅用于基本运行验证，不等于完整正确性测试。
-gemm_tensor.cu 在乘法前将输入舍入到 TF32；gemm_mma.cu 使用 FP16 输入和 FP32 累加。两者的乘法精度均与普通 FP32 版本不同。
+gemm_mma.cu 使用 FP16 输入和 FP32 累加，其乘法精度与普通 FP32 版本不同。
 
 ### 归约与 Softmax
 
