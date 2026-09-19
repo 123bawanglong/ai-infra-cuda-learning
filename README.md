@@ -14,10 +14,6 @@ optimizations step by step.
 | Naive（V1） | 44.26 ms | 3.11 TFLOP/s |
 | V7（调参后） | 5.24 ms | 26.23 TFLOP/s |
 
-优化过程：Naive → shared memory 分块 → thread tile → 向量化访存 → 异步拷贝与 shared memory 双缓冲 → 寄存器双缓冲 → warp tiling。
-
-> 数据及以下分析来自《实验文档_4096_新结果_含V6》。原记录另报告调参后 V7 达到 cuBLAS 吞吐量的 84.1%。这些结果对应原实验中的调参版本，尚未在本文中绑定到仓库的具体 commit；GPU、编译参数及 cuBLAS 测试口径仍需补充，不能直接视为当前 `gemm_v7.cu` 的复现结果。
-
 下面按版本保留实验分析和 Nsight Compute 截图，点击展开。
 <details>
 <summary><strong>V1 实验分析与 Profiling 截图</strong></summary>
