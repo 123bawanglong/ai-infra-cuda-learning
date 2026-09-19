@@ -42,7 +42,6 @@ Good files to commit:
 
 - Source code under `src/`
 - Documentation under `docs/`
-- Small helper scripts under `scripts/`
 - README updates
 - `.gitignore` updates
 
@@ -69,7 +68,6 @@ src/gemm/gemm_v4.cu
 src/softmax/softmax_v2_warp_shuffle.cu
 src/reduction/reduce_v3_block_reduce_grid_stride.cu
 docs/softmax/profiling.md
-scripts/softmax/gen_input.py
 ```
 
 Avoid names that only make sense during a course:
@@ -121,7 +119,7 @@ Do not use `git add .` unless the repository has been carefully checked.
 Prefer explicit staging:
 
 ```bash
-git add README.md docs/softmax/profiling.md scripts/softmax/gen_input.py src/softmax/
+git add README.md docs/softmax/profiling.md src/softmax/
 ```
 
 Then check again:

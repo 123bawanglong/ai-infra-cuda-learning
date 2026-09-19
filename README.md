@@ -40,7 +40,6 @@ optimizations step by step.
 ├── docs/
 │   ├── benchmarking.md
 │   └── softmax/profiling.md
-├── scripts/softmax/
 └── PUSH_WORKFLOW.md
 ```
 
@@ -97,7 +96,6 @@ launch configurations are documented at the bottom of each source file.
 
 - NVIDIA GPU and CUDA Toolkit with `nvcc`
 - Nsight Compute (`ncu`) for profiling
-- Python 3 for input generation
 
 ## Build
 
@@ -143,8 +141,10 @@ printf "1 4 0.00001\n1 2 3 4\n1 1 1 1\n" | build/rmsnorm
 
 ## Profiling
 
+Prepare `input_320x4096.txt` with `320 4096` on the first line, followed by
+320 × 4096 floating-point values in row-major order, separated by whitespace.
+
 ```bash
-python3 scripts/softmax/gen_input.py --rows 320 --cols 4096 > input_320x4096.txt
 mkdir -p reports
 ncu --set full --force-overwrite \
   -o reports/softmax_v3_320x4096 \

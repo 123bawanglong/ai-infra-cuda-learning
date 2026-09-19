@@ -15,10 +15,11 @@ This shape is large enough to make row-wise parallelism visible while keeping th
 
 ## Commands
 
-```bash
-python3 scripts/softmax/gen_input.py --rows 320 --cols 4096 > input_320x4096.txt
+Prepare `input_320x4096.txt` with `320 4096` on the first line, followed by
+320 × 4096 floating-point values in row-major order, separated by whitespace.
 
-mkdir -p build
+```bash
+mkdir -p build reports
 nvcc -O3 -lineinfo src/softmax/softmax_v1_shared_memory.cu -o build/softmax_v1
 nvcc -O3 -lineinfo src/softmax/softmax_v2_warp_shuffle.cu -o build/softmax_v2
 nvcc -O3 -lineinfo src/softmax/softmax_v3_multi_warp_shared.cu -o build/softmax_v3
