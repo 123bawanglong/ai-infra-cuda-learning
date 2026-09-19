@@ -1,4 +1,3 @@
-
 #include <cuda_runtime.h>
 #include <cuda_pipeline.h>
 #include <cuda_fp16.h>
@@ -28,8 +27,7 @@ mysgemm_mma(int M,int N,int K,float alpha,const half *A,float beta,const half *B
     for(int i=tid;i<BM*BK/8;i+=THREADNUM){
         int row=i/ACPR;
         int chunk=i%ACPR;
-        int mask=(ACPR==4)?((row>>1)&3):(row&7);
-        int dst=row*BK+(chunk^mask)*8;
+        int dst=row*BK+chunk*8;
         int global_row=blockIdx.y*BM+row;
         int global_col=0+chunk*8;
         size_t index=static_cast<size_t>(global_row)*K+global_col;
@@ -43,7 +41,7 @@ mysgemm_mma(int M,int N,int K,float alpha,const half *A,float beta,const half *B
     for(int i=tid;i<BK*BN/8;i+=THREADNUM){
         int row=i/BCPR;
         int chunk=i%BCPR;
-        int dst=row*BN+(chunk^(row&7))*8;
+        int dst=row*BN+chunk*8;
         int global_row=0+row;
         int global_col=blockIdx.x*BN+chunk*8;
         size_t index=static_cast<size_t>(global_row)*N+global_col;
@@ -63,8 +61,7 @@ mysgemm_mma(int M,int N,int K,float alpha,const half *A,float beta,const half *B
             for(int i=tid;i<BM*BK/8;i+=THREADNUM){
                 int row=i/ACPR;
                 int chunk=i%ACPR;
-                int mask=(ACPR==4)?((row>>1)&3):(row&7);
-                int dst=row*BK+(chunk^mask)*8;
+                int dst=row*BK+chunk*8;
                 int global_row=blockIdx.y*BM+row;
                 int global_col=k+BK+chunk*8;
                 size_t index=static_cast<size_t>(global_row)*K+global_col;
@@ -78,7 +75,7 @@ mysgemm_mma(int M,int N,int K,float alpha,const half *A,float beta,const half *B
             for(int i=tid;i<BK*BN/8;i+=THREADNUM){
                 int row=i/BCPR;
                 int chunk=i%BCPR;
-                int dst=row*BN+(chunk^(row&7))*8;
+                int dst=row*BN+chunk*8;
                 int global_row=k+BK+row;
                 int global_col=blockIdx.x*BN+chunk*8;
                 size_t index=static_cast<size_t>(global_row)*N+global_col;
@@ -99,8 +96,7 @@ mysgemm_mma(int M,int N,int K,float alpha,const half *A,float beta,const half *B
             for(int m=0;m<MITER;m++){
                 int row=warp_row*WM+m*16+load_row;
                 int col=bk+load_col;
-                int mask=(ACPR==4)?((row>>1)&3):(row&7);
-                int index=row*BK+((col/8)^mask)*8+col%8;
+                int index=row*BK+col;
                 unsigned addr=static_cast<unsigned>(__cvta_generic_to_shared(&As[load_index][index]));
                 asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];"
                     :"=r"(a_frag[m][0]),"=r"(a_frag[m][1]),"=r"(a_frag[m][2]),"=r"(a_frag[m][3]):"r"(addr));
@@ -109,7 +105,7 @@ mysgemm_mma(int M,int N,int K,float alpha,const half *A,float beta,const half *B
             for(int n=0;n<NITER;n+=2){
                 int row=bk+load_row;
                 int col=warp_col*WN+n*8+load_col;
-                int index=row*BN+((col/8)^(row&7))*8+col%8;
+                int index=row*BN+col;
                 unsigned addr=static_cast<unsigned>(__cvta_generic_to_shared(&Bs[load_index][index]));
                 unsigned reg[4];
                 asm volatile("ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];"
@@ -246,8 +242,3 @@ int main()
     cudaFree(C);
     return 0;
 }
-
-
-
-
-
