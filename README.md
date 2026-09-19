@@ -12,7 +12,7 @@
 | 朴素实现（V1） | 44.26 ms | 3.11 TFLOP/s |
 | V7（调参后） | 5.24 ms | 26.23 TFLOP/s |
 
-v7达到了cuBLAS的84.1%，但是加入tsnor core之后的MMA 版本吞吐量却降到约为 cuBLAS 的 **71.59%**；最后通过ncu的性能分析针对性优化，新方案采用 PTX 指令与 XOR swizzle 后的吞吐达到了 cuBLAS **92.01%**。
+v7达到了cuBLAS的84.1%，但是加入tensor core之后的MMA 版本吞吐量却降到了约为只有 cuBLAS 的 **71.59%**；通过ncu的性能分析找到bank conflict的问题，最后针对性优化，新方案采用 PTX 指令与 XOR swizzle 后的吞吐达到了 cuBLAS **92.01%**。
 
 下面按版本保留实验分析和 Nsight Compute 截图，点击展开。
 <details>
