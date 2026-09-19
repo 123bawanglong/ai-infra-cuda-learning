@@ -37,9 +37,6 @@ optimizations step by step.
 │   ├── rmsnorm/      # vectorized RMSNorm
 │   ├── softmax/      # row-wise softmax stages
 │   └── transpose/    # matrix-transpose stages
-├── docs/
-│   ├── benchmarking.md
-│   └── softmax/profiling.md
 └── PUSH_WORKFLOW.md
 ```
 
@@ -152,9 +149,7 @@ ncu --set full --force-overwrite \
 ```
 
 Compare duration, memory bandwidth, global-memory efficiency, shared-memory
-bank conflicts, occupancy, register use, and warp efficiency. Record results
-with [`docs/benchmarking.md`](docs/benchmarking.md); Softmax-specific guidance is in
-[`docs/softmax/profiling.md`](docs/softmax/profiling.md).
+bank conflicts, occupancy, register use, and warp efficiency.
 
 ## Current Scope
 
