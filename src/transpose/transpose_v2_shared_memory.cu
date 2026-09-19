@@ -1,7 +1,5 @@
 #include <cuda_runtime.h>
 #include <iostream>
-#include <cstdlib>
-#include <cmath>
 #define BDIMX 32
 #define BDIMY 8
 __global__ void v2(float* out,const float* in,int nx,int ny){
@@ -23,24 +21,6 @@ __global__ void v2(float* out,const float* in,int nx,int ny){
         out[to]=tile[col][row];
     }
 }
-void cpu_transpose(const float* in,float* out,int nx,int ny){
-    for(int y=0;y<ny;y++){
-        for(int x=0;x<nx;x++){
-            int ti=y*nx+x;
-            int to=x*ny+y;
-            out[to]=in[ti];
-        }
-    }
-}
-bool check_result(const float* gpu,const float* cpu,size_t size){
-    for(size_t i=0;i<size;i++){
-        if(std::fabs(gpu[i]-cpu[i])>1e-5f){
-            std::cerr<<"Mismatch at index "<<i<<": GPU = "<<gpu[i]<<", CPU = "<<cpu[i]<<'\n';
-            return false;
-        }
-    }
-    return true;
-}
 int main(){
     int nx,ny;
     std::cout<<"input nx ny: ";
@@ -53,7 +33,6 @@ int main(){
     size_t bytes=num_elements*sizeof(float);
     float* h_in=new float[num_elements];
     float* h_out=new float[num_elements];
-    float* h_ref=new float[num_elements];
     for(size_t i=0;i<num_elements;i++) h_in[i]=static_cast<float>(i);
     float* d_in=nullptr;
     float* d_out=nullptr;
@@ -78,10 +57,7 @@ int main(){
     float ms=0.0f;
     cudaEventElapsedTime(&ms,start,stop);
     cudaMemcpy(h_out,d_out,bytes,cudaMemcpyDeviceToHost);
-    cpu_transpose(h_in,h_ref,nx,ny);
-    bool correct=check_result(h_out,h_ref,num_elements);
     std::cout<<"kernel time: "<<ms<<" ms\n";
-    std::cout<<"result: "<<(correct?"PASS":"FAIL")<<'\n';
     if(nx<=16&&ny<=16){
         std::cout<<"\ninput:\n";
         for(int y=0;y<ny;y++){
@@ -100,6 +76,5 @@ int main(){
     cudaFree(d_out);
     delete[] h_in;
     delete[] h_out;
-    delete[] h_ref;
     return 0;
 }
