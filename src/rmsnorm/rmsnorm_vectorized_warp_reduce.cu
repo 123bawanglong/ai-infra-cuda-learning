@@ -1,18 +1,15 @@
 #include <cuda_runtime.h>
-
 #include <cstdlib>
 #include <iostream>
 #include <vector>
-
-#define CUDA_CHECK(call) do {                                                \
-    const cudaError_t error = (call);                                        \
-    if (error != cudaSuccess) {                                              \
-        std::cerr << "CUDA error: " << cudaGetErrorString(error)              \
-                  << " at " << __FILE__ << ':' << __LINE__ << '\n';          \
-        std::exit(EXIT_FAILURE);                                             \
-    }                                                                        \
+#define CUDA_CHECK(call) do {                                                
+    const cudaError_t error = (call);                                        
+    if (error != cudaSuccess) {                                              
+        std::cerr << "CUDA error: " << cudaGetErrorString(error)             
+                  << " at " << __FILE__ << ':' << __LINE__ << '\n';          
+        std::exit(EXIT_FAILURE);                                             
+    }                                                                        
 } while (0)
-
 __device__ __forceinline__ float warp_reduce_sum(float value) {
     #pragma unroll
     for (int offset = 16; offset > 0; offset /= 2) {
@@ -20,7 +17,6 @@ __device__ __forceinline__ float warp_reduce_sum(float value) {
     }
     return value;
 }
-
 template <int BlockSize>
 __global__ void rms_norm_vectorized(
     const float* __restrict__ input,
@@ -38,7 +34,6 @@ __global__ void rms_norm_vectorized(
     if (row >= batch_size) {
         return;
     }
-
     const int tid = threadIdx.x;
     const int lane = tid & 31;
     const int warp = tid >> 5;
@@ -46,7 +41,6 @@ __global__ void rms_norm_vectorized(
     float* row_output = output + static_cast<size_t>(row) * hidden_size;
     const bool can_vectorize = (hidden_size & 3) == 0;
     float sum_of_squares = 0.0f;
-
     if (can_vectorize) {
         const int vector_count = hidden_size / 4;
         const float4* vector_input = reinterpret_cast<const float4*>(row_input);
@@ -63,13 +57,11 @@ __global__ void rms_norm_vectorized(
             sum_of_squares = fmaf(value, value, sum_of_squares);
         }
     }
-
     sum_of_squares = warp_reduce_sum(sum_of_squares);
     if (lane == 0) {
         warp_sums[warp] = sum_of_squares;
     }
     __syncthreads();
-
     if (warp == 0) {
         float block_sum = lane < kWarpCount ? warp_sums[lane] : 0.0f;
         block_sum = warp_reduce_sum(block_sum);
@@ -78,10 +70,8 @@ __global__ void rms_norm_vectorized(
         }
     }
     __syncthreads();
-
     const float scale =
         rsqrtf(warp_sums[0] / static_cast<float>(hidden_size) + epsilon);
-
     if (can_vectorize) {
         const int vector_count = hidden_size / 4;
         const float4* vector_input = reinterpret_cast<const float4*>(row_input);
@@ -103,7 +93,6 @@ __global__ void rms_norm_vectorized(
         }
     }
 }
-
 int main() {
     int batch_size = 0;
     int hidden_size = 0;
@@ -113,7 +102,6 @@ int main() {
         std::cerr << "invalid dimensions or epsilon\n";
         return EXIT_FAILURE;
     }
-
     const size_t count = static_cast<size_t>(batch_size) * hidden_size;
     const size_t data_bytes = count * sizeof(float);
     const size_t weight_bytes = static_cast<size_t>(hidden_size) * sizeof(float);
@@ -122,7 +110,6 @@ int main() {
     std::vector<float> host_output(count);
     for (float& value : host_input) std::cin >> value;
     for (float& value : host_weight) std::cin >> value;
-
     float* device_input = nullptr;
     float* device_output = nullptr;
     float* device_weight = nullptr;
@@ -131,7 +118,6 @@ int main() {
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_weight), weight_bytes));
     CUDA_CHECK(cudaMemcpy(device_input, host_input.data(), data_bytes, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(device_weight, host_weight.data(), weight_bytes, cudaMemcpyHostToDevice));
-
     constexpr int kBlockSize = 256;
     rms_norm_vectorized<kBlockSize><<<batch_size, kBlockSize>>>(
         device_input, device_output, device_weight,
@@ -139,7 +125,6 @@ int main() {
     );
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaMemcpy(host_output.data(), device_output, data_bytes, cudaMemcpyDeviceToHost));
-
     for (const float value : host_output) std::cout << value << '\n';
     CUDA_CHECK(cudaFree(device_input));
     CUDA_CHECK(cudaFree(device_output));
