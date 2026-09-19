@@ -9,7 +9,7 @@ optimizations step by step.
 
 - Implements SGEMM, Reduction, Softmax, RMSNorm, Transpose, Histogram, and FlashAttention.
 - Keeps numbered versions so every optimization step can be reviewed independently.
-- Includes CPU or cuBLAS references and correctness checks in standalone examples.
+- Includes CPU references and correctness checks in selected standalone examples.
 - Covers boundary-safe access, stable softmax, warp reductions, and tiled memory reuse.
 - Provides build, test, and Nsight Compute profiling commands.
 
@@ -17,7 +17,7 @@ optimizations step by step.
 
 | Operator | Optimization path |
 |---|---|
-| SGEMM | Shared-memory tiling → register tiling and `float4` access → double buffering → warp tiling |
+| GEMM | Naive FP32 → shared-memory tiling → register tiling → vectorized access → async copy and double buffering → register prefetch → warp tiling; TF32 Tensor Core variant |
 | Reduction | Shared-memory reduction → warp shuffle → grid-stride block reduction |
 | Softmax | Shared-memory reduction → one warp per row → multiple warps per row |
 | Transpose | Naive transpose → shared-memory coalescing → bank-conflict padding → two elements per thread |
@@ -31,7 +31,7 @@ optimizations step by step.
 .
 ├── src/
 │   ├── attention/    # FlashAttention kernels
-│   ├── gemm/         # cuBLAS reference and SGEMM stages
+│   ├── gemm/         # GEMM V1–V7 and TF32 Tensor Core example
 │   ├── histogram/    # shared-memory histogram
 │   ├── reduction/    # block and warp reduction stages
 │   ├── rmsnorm/      # vectorized RMSNorm
@@ -46,17 +46,25 @@ optimizations step by step.
 
 ## Kernel Guide
 
-### SGEMM
+### GEMM
 
 | Stage | File | Main idea |
 |---|---|---|
-| Reference | [`cublas_row_major_reference.cu`](src/gemm/cublas_row_major_reference.cu) | Row-major cuBLAS comparison |
-| V1 | [`sgemm_v1_shared_memory.cu`](src/gemm/sgemm_v1_shared_memory.cu) | Shared-memory block tiling |
-| V2 | [`sgemm_v2_register_tiled_vectorized.cu`](src/gemm/sgemm_v2_register_tiled_vectorized.cu) | Register tiles and `float4` access |
-| V3 | [`sgemm_v3_double_buffered.cu`](src/gemm/sgemm_v3_double_buffered.cu) | Double buffering and register prefetch |
-| V4 | [`sgemm_v4_warp_tiled_double_buffered.cu`](src/gemm/sgemm_v4_warp_tiled_double_buffered.cu) | Warp tiling and double buffering |
+| V1 | [`gemm_v1.cu`](src/gemm/gemm_v1.cu) | Naive FP32, one output element per thread |
+| V2 | [`gemm_v2.cu`](src/gemm/gemm_v2.cu) | Shared-memory block tiling |
+| V3 | [`gemm_v3.cu`](src/gemm/gemm_v3.cu) | Per-thread register tiles |
+| V4 | [`gemm_v4.cu`](src/gemm/gemm_v4.cu) | `float4` access and transposed A shared-memory layout |
+| V5 | [`gemm_v5.cu`](src/gemm/gemm_v5.cu) | Asynchronous global-to-shared copies and shared-memory double buffering |
+| V6 | [`gemm_v6.cu`](src/gemm/gemm_v6.cu) | Double-buffered register fragments |
+| V7 | [`gemm_v7.cu`](src/gemm/gemm_v7.cu) | Explicit warp tiling |
+| Tensor Core | [`gemm_tensor.cu`](src/gemm/gemm_tensor.cu) | WMMA TF32 multiplication with FP32 accumulation |
 
-V3 and V4 require `M` and `N` to be multiples of 128 and `K` to be a multiple of 8.
+All eight files are standalone programs with `M=N=K=4096`, all-one inputs,
+10 warm-up iterations, and 100 timed iterations. They take no stdin input and
+print average kernel time, throughput, and `C[0]` (expected: 4096).
+This single-element check is a smoke test, not a full correctness test.
+The Tensor Core variant explicitly rounds inputs to TF32 before multiplication;
+it does not have the same multiplication precision as the FP32 versions.
 
 ### Reduction and Softmax
 
@@ -96,9 +104,11 @@ launch configurations are documented at the bottom of each source file.
 ```bash
 mkdir -p build
 
-nvcc -O3 -lineinfo src/gemm/sgemm_v1_shared_memory.cu -o build/sgemm_v1
-nvcc -O3 -lineinfo src/gemm/sgemm_v4_warp_tiled_double_buffered.cu -o build/sgemm_v4
-nvcc -O3 -lineinfo src/gemm/cublas_row_major_reference.cu -lcublas -o build/cublas_gemm
+# Set this to your GPU architecture (sm_120 for RTX 5080).
+CUDA_ARCH=sm_120
+for version in v1 v2 v3 v4 v5 v6 v7 tensor; do
+  nvcc -O3 -lineinfo -arch=$CUDA_ARCH src/gemm/gemm_${version}.cu -o build/gemm_${version}
+done
 nvcc -O3 -lineinfo src/softmax/softmax_v3_multi_warp_shared.cu -o build/softmax_v3
 nvcc -O3 -lineinfo src/transpose/transpose_v4_shared_memory_padded_two_elements.cu -o build/transpose_v4
 nvcc -O3 -lineinfo src/rmsnorm/rmsnorm_vectorized_warp_reduce.cu -o build/rmsnorm
@@ -117,8 +127,9 @@ Add the architecture flag for your GPU, for example `-arch=sm_89`.
 ## Quick Correctness Checks
 
 ```bash
-# SGEMM V1
-printf "2 3 4\n1 2 3 4 5 6 7 8\n1 0 0 0 1 0 0 0 1 1 1 1\n" | build/sgemm_v1
+# GEMM smoke tests (fixed 4096 x 4096 inputs, expected C[0] = 4096)
+build/gemm_v1
+build/gemm_tensor
 
 # Softmax V3
 printf "2 3\n1 2 3\n4 5 6\n" | build/softmax_v3
@@ -147,7 +158,7 @@ with [`docs/benchmarking.md`](docs/benchmarking.md); Softmax-specific guidance i
 
 ## Current Scope
 
-- Kernels use FP32 to focus on CUDA optimization fundamentals.
+- Kernels use FP32, except GEMM Tensor Core multiplication uses TF32 with FP32 accumulation.
 - FlashAttention models one head without causal masking, batching, or mixed precision.
 - Performance numbers are not published until measured reproducibly on a specified GPU.
 - This educational repository is not a replacement for production libraries.
@@ -163,6 +174,6 @@ with [`docs/benchmarking.md`](docs/benchmarking.md); Softmax-specific guidance i
 
 - Add automated correctness tests for every operator.
 - Benchmark all optimization stages on the same NVIDIA GPU.
-- Add FP16/BF16 and Tensor Core implementations.
+- Add FP16/BF16 Tensor Core implementations.
 - Add batched, multi-head, and causal FlashAttention variants.
 - Compare custom kernels against cuBLAS and framework baselines.

@@ -65,7 +65,7 @@ cp course3.1.cu src/softmax/softmax_v1_shared_memory.cu
 Prefer names that explain the optimization idea:
 
 ```text
-src/gemm/sgemm_v2_register_tiled_vectorized.cu
+src/gemm/gemm_v4.cu
 src/softmax/softmax_v2_warp_shuffle.cu
 src/reduction/reduce_v3_block_reduce_grid_stride.cu
 docs/softmax/profiling.md
