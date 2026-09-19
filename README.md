@@ -448,7 +448,7 @@ SASS 表明当前 GEMM 主要通过 FP32 FFMA 完成矩阵乘加，因此考虑�
 | V5 | [gemm_v5.cu](src/gemm/gemm_v5.cu) | global memory 到 shared memory 的异步拷贝与双缓冲 |
 | V6 | [gemm_v6.cu](src/gemm/gemm_v6.cu) | 寄存器片段双缓冲 |
 | V7 | [gemm_v7.cu](src/gemm/gemm_v7.cu) | 显式 warp 分块 |
-| FP16 MMA | [gemm_mma.cu](src/gemm/gemm_mma.cu) | 使用 ldmatrix 与 mma.sync 指令、shared memory 重排及异步双缓冲，FP16 输入、FP32 累加 |
+| FP16 MMA | [gemm_mma.cu](src/gemm/gemm_mma.cu) | 使用 ldmatrix 与 mma.sync 指令、shared memory 及异步双缓冲，FP16 输入、FP32 累加 |
 
 八个文件都是独立程序，固定使用 M=N=K=4096、全 1 输入、10 次预热和 100 次计时迭代。
 程序不读取标准输入，会输出平均 kernel 耗时、吞吐量和 C[0]（预期为 4096）。
