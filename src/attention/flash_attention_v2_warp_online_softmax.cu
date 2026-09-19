@@ -1,6 +1,5 @@
 #include <cuda_runtime.h>
 #include <math_constants.h>
-
 __device__ __forceinline__ float warp_reduce_max(float value) {
     #pragma unroll
     for (int offset = 16; offset > 0; offset /= 2) {
@@ -8,7 +7,6 @@ __device__ __forceinline__ float warp_reduce_max(float value) {
     }
     return __shfl_sync(0xffffffffu, value, 0);
 }
-
 __device__ __forceinline__ float warp_reduce_sum(float value) {
     #pragma unroll
     for (int offset = 16; offset > 0; offset /= 2) {
@@ -16,7 +14,6 @@ __device__ __forceinline__ float warp_reduce_sum(float value) {
     }
     return __shfl_sync(0xffffffffu, value, 0);
 }
-
 template <int D, int Br, int Bc>
 __global__ void flash_attention_warp_online_softmax(
     const float* __restrict__ query,
@@ -30,20 +27,17 @@ __global__ void flash_attention_warp_online_softmax(
     if (blockDim.x < 32 || (blockDim.x & 31) != 0) {
         return;
     }
-
     __shared__ float q_tile[Br][D];
     __shared__ float k_tile[Bc][D];
     __shared__ float v_tile[Bc][D];
     __shared__ float o_tile[Br][D];
     __shared__ float row_sum[Br];
     __shared__ float row_max[Br];
-
     const int tid = threadIdx.x;
     const int warp = tid >> 5;
     const int lane = tid & 31;
     const int warp_count = blockDim.x >> 5;
     const float softmax_scale = rsqrtf(static_cast<float>(D));
-
     for (int q_local = warp; q_local < Br; q_local += warp_count) {
         const int q_row = blockIdx.x * Br + q_local;
         const bool q_valid = q_row < sequence_length;
@@ -58,7 +52,6 @@ __global__ void flash_attention_warp_online_softmax(
         }
     }
     __syncthreads();
-
     for (int k_start = 0; k_start < sequence_length; k_start += Bc) {
         for (int index = tid; index < Bc * D; index += blockDim.x) {
             const int k_local = index / D;
@@ -71,13 +64,11 @@ __global__ void flash_attention_warp_online_softmax(
                 k_valid ? value[static_cast<size_t>(k_row) * D + column] : 0.0f;
         }
         __syncthreads();
-
         for (int q_local = warp; q_local < Br; q_local += warp_count) {
             const int q_row = blockIdx.x * Br + q_local;
             const bool q_valid = q_row < sequence_length;
             const int k_row = k_start + lane;
             const bool k_valid = k_row < sequence_length;
-
             float score = -CUDART_INF_F;
             if (q_valid && k_valid) {
                 score = 0.0f;
@@ -87,7 +78,6 @@ __global__ void flash_attention_warp_online_softmax(
                 }
                 score *= softmax_scale;
             }
-
             const float tile_max = warp_reduce_max(score);
             const float new_max = fmaxf(row_max[q_local], tile_max);
             const float old_scale = expf(row_max[q_local] - new_max);
@@ -95,7 +85,6 @@ __global__ void flash_attention_warp_online_softmax(
                 q_valid && k_valid ? expf(score - new_max) : 0.0f;
             const float tile_sum = warp_reduce_sum(probability);
             const float new_sum = row_sum[q_local] * old_scale + tile_sum;
-
             for (int column_base = 0; column_base < D; column_base += 32) {
                 const int column = column_base + lane;
                 float weighted_value = 0.0f;
@@ -121,7 +110,6 @@ __global__ void flash_attention_warp_online_softmax(
         }
         __syncthreads();
     }
-
     for (int q_local = warp; q_local < Br; q_local += warp_count) {
         const int q_row = blockIdx.x * Br + q_local;
         if (q_row < sequence_length) {
@@ -133,6 +121,3 @@ __global__ void flash_attention_warp_online_softmax(
         }
     }
 }
-
-// Launch with a one-dimensional block whose size is a positive multiple of 32,
-// for example 128 threads, and grid.x = (sequence_length + Br - 1) / Br.
