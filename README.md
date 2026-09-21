@@ -462,8 +462,7 @@ Memory Workload Analysis提示bank conflict很严重，重点思考解决bank co
 │   ├── rmsnorm/      # 向量化 RMSNorm
 │   ├── softmax/      # 逐行 Softmax 的各阶段实现
 │   └── transpose/    # 矩阵转置的各阶段实现
-├── images/          # GEMM 性能分析截图
-└── PUSH_WORKFLOW.md  # 代码提交与推送流程
+└── images/          # GEMM 性能分析截图
 ```
 
 ## 算子代码说明
